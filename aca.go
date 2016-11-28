@@ -2,7 +2,6 @@ package aca
 
 import (
 	"container/list"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -160,7 +159,7 @@ func (a *ACA) HasContainedIn(str string) bool {
 }
 
 type ReplaceOptions struct {
-	Skips         map[rune]struct{}
+	Skips         RunSet
 	Replacement   rune
 	ReplaceSkip   bool
 	CaseSensitive bool
@@ -172,8 +171,7 @@ type replaceMatched struct {
 }
 
 func (p *replaceMatched) Prepare(r rune) (rune, bool) {
-	_, has := p.Skips[r]
-	if has {
+	if p.Skips.Has(r) {
 		return r, false
 	}
 
@@ -197,26 +195,6 @@ func (p *replaceMatched) Process(runes []rune, index int, matched string) bool {
 		}
 	}
 	return true
-}
-
-var _FLAG = struct{}{}
-
-func NewRuneSet(rs string) map[rune]struct{} {
-	if rs == "" {
-		return nil
-	}
-	set := make(map[rune]struct{})
-	for _, r := range rs {
-		set[r] = _FLAG
-	}
-	return set
-}
-
-func ToLower(r rune) rune {
-	if r <= unicode.MaxASCII {
-		return unicode.ToLower(r)
-	}
-	return r
 }
 
 func (a *ACA) Replace(str string, options *ReplaceOptions) string {
