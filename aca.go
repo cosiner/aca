@@ -5,11 +5,36 @@ import (
 	"unicode/utf8"
 )
 
-type ACA struct {
+type treeNode struct {
 	str      string
-	r        rune
-	children map[rune]*ACA
-	failNode *ACA
+	children map[rune]*treeNode
+	failNode *treeNode
+}
+
+type ACA struct {
+	skips         RunSet
+	caseSensitive bool
+	root          *treeNode
+}
+
+func New(skips RunSet, caseSensitive bool) *ACA {
+	return &ACA{
+		skips:         skips,
+		caseSensitive: caseSensitive,
+		root:          &treeNode{},
+	}
+}
+
+func (a *ACA) Skips() RunSet {
+	return a.skips
+}
+
+func (a *ACA) CaseSensitive() bool {
+	return a.caseSensitive
+}
+
+func (a *ACA) UpdateSkips(set RunSet) {
+	a.skips = set
 }
 
 func (a *ACA) addRunes(str string, rs []rune) {
@@ -17,15 +42,15 @@ func (a *ACA) addRunes(str string, rs []rune) {
 		return
 	}
 
-	curr := a
+	curr := a.root
 	for {
 		r := rs[0]
 		if curr.children == nil {
-			curr.children = make(map[rune]*ACA)
+			curr.children = make(map[rune]*treeNode)
 		}
 		child, has := curr.children[r]
 		if !has {
-			child = &ACA{r: r}
+			child = &treeNode{}
 			curr.children[r] = child
 		}
 
@@ -46,14 +71,14 @@ func (a *ACA) Add(strings ...string) *ACA {
 }
 
 func (a *ACA) Build() *ACA {
-	a.failNode = a
+	a.root.failNode = a.root
 
 	queue := list.New()
-	queue.PushBack(a)
+	queue.PushBack(a.root)
 	for queue.Len() > 0 {
 		front := queue.Front()
 		queue.Remove(front)
-		topNode := front.Value.(*ACA)
+		topNode := front.Value.(*treeNode)
 
 		for r, child := range topNode.children {
 			node := topNode
@@ -62,12 +87,12 @@ func (a *ACA) Build() *ACA {
 				if has && failNode != child {
 					child.failNode = failNode
 				}
-				if node == a || child.failNode != nil {
+				if node == a.root || child.failNode != nil {
 					break
 				}
 			}
 			if child.failNode == nil {
-				child.failNode = a
+				child.failNode = a.root
 			}
 			queue.PushBack(child)
 		}
@@ -76,21 +101,27 @@ func (a *ACA) Build() *ACA {
 }
 
 type Processor interface {
-	Prepare(r rune) (res rune, valid bool)
-	Process(rs []rune, index int, matched string) (continu bool)
+	Process(a *ACA, rs []rune, index int, matched string) (continu bool)
+}
+
+func (a *ACA) PrepareRune(r rune) rune {
+	if a.caseSensitive {
+		return r
+	}
+	return ToLower(r)
 }
 
 func (a *ACA) Process(str string, processor Processor) {
 	var (
-		curr = a
+		curr = a.root
 		rs   = []rune(str)
 	)
-	for i, ru := range rs {
-		r, valid := processor.Prepare(ru)
-		if !valid {
+	for i, r := range rs {
+		if a.skips.Has(r) {
 			continue
 		}
 
+		r = a.PrepareRune(r)
 		var rooIterated bool
 		for {
 			child, has := curr.children[r]
@@ -103,16 +134,16 @@ func (a *ACA) Process(str string, processor Processor) {
 				break
 			}
 
-			if curr == a {
+			if curr == a.root {
 				if rooIterated {
 					break
 				}
 				rooIterated = true
 			}
 		}
-		for tmp := curr; tmp != a; tmp = tmp.failNode {
+		for tmp := curr; tmp != a.root; tmp = tmp.failNode {
 			if tmp.str != "" {
-				if !processor.Process(rs, i, tmp.str) {
+				if !processor.Process(a, rs, i, tmp.str) {
 					return
 				}
 			}
@@ -124,11 +155,7 @@ type queryMatched struct {
 	matched []string
 }
 
-func (m *queryMatched) Prepare(r rune) (rune, bool) {
-	return r, true
-}
-
-func (m *queryMatched) Process(_ []rune, index int, matched string) bool {
+func (m *queryMatched) Process(_ *ACA, _ []rune, index int, matched string) bool {
 	m.matched = append(m.matched, matched)
 	return true
 }
@@ -143,11 +170,7 @@ type queryHasContainedIn struct {
 	has bool
 }
 
-func (p *queryHasContainedIn) Prepare(r rune) (rune, bool) {
-	return r, true
-}
-
-func (p *queryHasContainedIn) Process([]rune, int, string) bool {
+func (p *queryHasContainedIn) Process(*ACA, []rune, int, string) bool {
 	p.has = true
 	return false
 }
@@ -158,48 +181,32 @@ func (a *ACA) HasContainedIn(str string) bool {
 	return p.has
 }
 
-type ReplaceOptions struct {
-	Skips         RunSet
-	Replacement   rune
-	ReplaceSkip   bool
-	CaseSensitive bool
-}
-
 type replaceMatched struct {
-	rs []rune
-	*ReplaceOptions
+	rs          []rune
+	replacement rune
+	replaceSkip bool
 }
 
-func (p *replaceMatched) Prepare(r rune) (rune, bool) {
-	if p.Skips.Has(r) {
-		return r, false
-	}
-
-	if p.CaseSensitive {
-		return r, true
-	}
-	return ToLower(r), true
-}
-
-func (p *replaceMatched) Process(runes []rune, index int, matched string) bool {
+func (p *replaceMatched) Process(a *ACA, runes []rune, index int, matched string) bool {
 	if p.rs == nil {
 		p.rs = runes
 	}
 	for n, size, j := 0, utf8.RuneCountInString(matched), index; n < size && j >= 0; j-- {
-		_, valid := p.Prepare(p.rs[j])
-		if valid {
+		skipped := a.Skips().Has(p.rs[j])
+		if skipped {
 			n += 1
 		}
-		if valid || p.ReplaceSkip {
-			p.rs[j] = p.Replacement
+		if skipped || p.replaceSkip {
+			p.rs[j] = p.replacement
 		}
 	}
 	return true
 }
 
-func (a *ACA) Replace(str string, options *ReplaceOptions) string {
+func (a *ACA) Replace(str string, replacement rune, replaceSkip bool) string {
 	p := replaceMatched{
-		ReplaceOptions: options,
+		replacement: replacement,
+		replaceSkip: replaceSkip,
 	}
 	a.Process(str, &p)
 	if p.rs == nil {
