@@ -193,10 +193,10 @@ func (p *replaceMatched) Process(a *ACA, runes []rune, index int, matched string
 	}
 	for n, size, j := 0, utf8.RuneCountInString(matched), index; n < size && j >= 0; j-- {
 		skipped := a.Skips().Has(p.rs[j])
-		if skipped {
+		if !skipped {
 			n += 1
 		}
-		if skipped || p.replaceSkip {
+		if !skipped || p.replaceSkip {
 			p.rs[j] = p.replacement
 		}
 	}
