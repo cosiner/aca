@@ -1,5 +1,11 @@
 package aca
 
+import (
+	"container/list"
+	"unicode"
+	"unicode/utf8"
+)
+
 type ACA struct {
 	str      string
 	r        rune
@@ -43,40 +49,46 @@ func (a *ACA) Add(strings ...string) *ACA {
 func (a *ACA) Build() *ACA {
 	a.failNode = a
 
-	stack := []*ACA{a}
-	for l := len(stack); l > 0; l = len(stack) {
-		topNode := stack[l-1]
-		stack = stack[:l-1]
+	queue := list.New()
+	queue.PushBack(a)
+	for queue.Len() > 0 {
+		front := queue.Front()
+		queue.Remove(front)
+		topNode := front.Value.(*ACA)
 
 		for r, child := range topNode.children {
 			node := topNode
-			for node = node.failNode; ; node = node.failNode {
+			for node = node.failNode; node != nil; node = node.failNode {
 				failNode, has := node.children[r]
 				if has && failNode != child {
 					child.failNode = failNode
 				}
 				if node == a || child.failNode != nil {
-					if child.failNode == nil {
-						child.failNode = a
-					}
 					break
 				}
 			}
-			stack = append(stack, child)
+			if child.failNode == nil {
+				child.failNode = a
+			}
+			queue.PushBack(child)
 		}
 	}
 	return a
 }
 
 type Processor interface {
-	Skip(r rune) bool
-	Process(wholeStr string, index int, matched string) (continu bool)
+	Prepare(r rune) (res rune, valid bool)
+	Process(rs []rune, index int, matched string) (continu bool)
 }
 
 func (a *ACA) Process(str string, processor Processor) {
-	var curr = a
-	for i, r := range str {
-		if processor.Skip(r) {
+	var (
+		curr = a
+		rs   = []rune(str)
+	)
+	for i, ru := range rs {
+		r, valid := processor.Prepare(ru)
+		if !valid {
 			continue
 		}
 
@@ -99,10 +111,9 @@ func (a *ACA) Process(str string, processor Processor) {
 				rooIterated = true
 			}
 		}
-
 		for tmp := curr; tmp != a; tmp = tmp.failNode {
 			if tmp.str != "" {
-				if !processor.Process(str, i, tmp.str) {
+				if !processor.Process(rs, i, tmp.str) {
 					return
 				}
 			}
@@ -114,11 +125,11 @@ type queryMatched struct {
 	matched []string
 }
 
-func (m *queryMatched) Skip(rune) bool {
-	return false
+func (m *queryMatched) Prepare(r rune) (rune, bool) {
+	return r, true
 }
 
-func (m *queryMatched) Process(wholeStr string, index int, matched string) bool {
+func (m *queryMatched) Process(_ []rune, index int, matched string) bool {
 	m.matched = append(m.matched, matched)
 	return true
 }
@@ -133,11 +144,11 @@ type queryHasContainedIn struct {
 	has bool
 }
 
-func (p *queryHasContainedIn) Skip(rune) bool {
-	return false
+func (p *queryHasContainedIn) Prepare(r rune) (rune, bool) {
+	return r, true
 }
 
-func (p *queryHasContainedIn) Process(string, int, string) bool {
+func (p *queryHasContainedIn) Process([]rune, int, string) bool {
 	p.has = true
 	return false
 }
@@ -148,26 +159,41 @@ func (a *ACA) HasContainedIn(str string) bool {
 	return p.has
 }
 
+type ReplaceOptions struct {
+	Skips         map[rune]struct{}
+	Replacement   rune
+	ReplaceSkip   bool
+	CaseSensitive bool
+}
+
 type replaceMatched struct {
-	rs      []rune
-	skips   map[rune]struct{}
-	replace rune
+	rs []rune
+	*ReplaceOptions
 }
 
-func (p *replaceMatched) Skip(r rune) bool {
-	_, has := p.skips[r]
-	return has
-}
-
-func (p *replaceMatched) Process(wholeStr string, index int, matched string) bool {
-	if p.rs == nil {
-		p.rs = []rune(wholeStr)
+func (p *replaceMatched) Prepare(r rune) (rune, bool) {
+	_, has := p.Skips[r]
+	if has {
+		return r, false
 	}
 
-	for n, size, j := 0, len(matched), index; n < size && j >= 0; j-- {
-		if !p.Skip(p.rs[j]) {
-			p.rs[j] = p.replace
+	if p.CaseSensitive {
+		return r, true
+	}
+	return ToLower(r), true
+}
+
+func (p *replaceMatched) Process(runes []rune, index int, matched string) bool {
+	if p.rs == nil {
+		p.rs = runes
+	}
+	for n, size, j := 0, utf8.RuneCountInString(matched), index; n < size && j >= 0; j-- {
+		_, valid := p.Prepare(p.rs[j])
+		if valid {
 			n += 1
+		}
+		if valid || p.ReplaceSkip {
+			p.rs[j] = p.Replacement
 		}
 	}
 	return true
@@ -176,7 +202,7 @@ func (p *replaceMatched) Process(wholeStr string, index int, matched string) boo
 var _FLAG = struct{}{}
 
 func NewRuneSet(rs string) map[rune]struct{} {
-	if len(rs) == 0 {
+	if rs == "" {
 		return nil
 	}
 	set := make(map[rune]struct{})
@@ -186,10 +212,16 @@ func NewRuneSet(rs string) map[rune]struct{} {
 	return set
 }
 
-func (a *ACA) Replace(str string, replace rune, skips map[rune]struct{}) string {
+func ToLower(r rune) rune {
+	if r <= unicode.MaxASCII {
+		return unicode.ToLower(r)
+	}
+	return r
+}
+
+func (a *ACA) Replace(str string, options *ReplaceOptions) string {
 	p := replaceMatched{
-		replace: replace,
-		skips:   skips,
+		ReplaceOptions: options,
 	}
 	a.Process(str, &p)
 	if p.rs == nil {

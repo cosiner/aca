@@ -18,11 +18,17 @@ func TestACA(t *testing.T) {
 		t.Fatal("ACA match failed")
 	}
 
-	if aca.Replace("yasherhs", '*', nil) != "ya****hs" {
+	options := &ReplaceOptions{
+		Skips:         NewRuneSet("-|}+=)(&"),
+		Replacement:   '*',
+		ReplaceSkip:   false,
+		CaseSensitive: false,
+	}
+	if aca.Replace("yasherhs", options) != "ya****hs" {
 		t.Fatal("ACA replace failed")
 	}
 
-	if aca.Replace("-y|a}s+h=e)r(h&s", '*', NewRuneSet("-|}+=)(&")) != "-y|a}*+*=*)*(h&s" {
+	if aca.Replace("-y|a}s+h=e)r(h&s", options) != "-y|a}*+*=*)*(h&s" {
 		t.Fatal("ACA replace with skips failed")
 	}
 
