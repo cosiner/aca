@@ -25,7 +25,7 @@ func (s RunSet) Has(r rune) bool {
 func (s RunSet) Clean(rs []rune) []rune {
 	var prev int
 	for _, r := range rs {
-		if s.Has(r) {
+		if !s.Has(r) {
 			rs[prev] = r
 			prev += 1
 		}
