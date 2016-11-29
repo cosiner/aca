@@ -6,6 +6,7 @@ import (
 )
 
 type treeNode struct {
+	r        rune
 	str      string
 	children map[rune]*treeNode
 	failNode *treeNode
@@ -42,9 +43,8 @@ func (a *ACA) addRunes(str string, rs []rune) {
 	if len(rs) == 0 {
 		return
 	}
-	for i, r := range rs {
-		rs[i] = a.PrepareRune(r)
-	}
+	rs = a.PrepareRunes(rs)
+	str = string(rs)
 
 	curr := a.root
 	for {
@@ -54,7 +54,9 @@ func (a *ACA) addRunes(str string, rs []rune) {
 		}
 		child, has := curr.children[r]
 		if !has {
-			child = &treeNode{}
+			child = &treeNode{
+				r: r,
+			}
 			curr.children[r] = child
 		}
 
@@ -71,36 +73,44 @@ func (a *ACA) Add(strings ...string) *ACA {
 	for _, str := range strings {
 		a.addRunes(str, []rune(str))
 	}
+
 	return a
 }
 
-func (a *ACA) Build() *ACA {
-	a.root.failNode = a.root
-
+func (a *ACA) iterate(fn func(parent, child *treeNode)) {
 	queue := list.New()
 	queue.PushBack(a.root)
 	for queue.Len() > 0 {
 		front := queue.Front()
 		queue.Remove(front)
-		topNode := front.Value.(*treeNode)
 
-		for r, child := range topNode.children {
-			node := topNode
-			for node = node.failNode; node != nil; node = node.failNode {
-				failNode, has := node.children[r]
-				if has && failNode != child {
-					child.failNode = failNode
-				}
-				if node == a.root || child.failNode != nil {
-					break
-				}
-			}
-			if child.failNode == nil {
-				child.failNode = a.root
-			}
+		parent := front.Value.(*treeNode)
+		for _, child := range parent.children {
+			fn(parent, child)
 			queue.PushBack(child)
 		}
 	}
+}
+
+func (a *ACA) Build() *ACA {
+	a.root.failNode = a.root
+
+	a.iterate(func(parent, child *treeNode) {
+		node := parent
+		for node = node.failNode; ; node = node.failNode {
+			failNode, has := node.children[child.r]
+			if has && failNode != child {
+				child.failNode = failNode
+			}
+			if node == a.root || child.failNode != nil {
+				break
+			}
+		}
+		if child.failNode == nil {
+			child.failNode = a.root
+		}
+	})
+
 	return a
 }
 
@@ -113,6 +123,13 @@ func (a *ACA) PrepareRune(r rune) rune {
 		return r
 	}
 	return ToLower(r)
+}
+
+func (a *ACA) PrepareRunes(rs []rune) []rune {
+	for i, r := range rs {
+		rs[i] = r
+	}
+	return rs
 }
 
 func (a *ACA) Process(str string, processor Processor) {
