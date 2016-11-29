@@ -38,8 +38,12 @@ func (a *ACA) UpdateSkips(set RunSet) {
 }
 
 func (a *ACA) addRunes(str string, rs []rune) {
+	rs = a.skips.Clean(rs)
 	if len(rs) == 0 {
 		return
+	}
+	for i, r := range rs {
+		rs[i] = a.PrepareRune(r)
 	}
 
 	curr := a.root
