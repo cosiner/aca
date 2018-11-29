@@ -6,8 +6,7 @@ import (
 )
 
 func TestACA(t *testing.T) {
-	var aca ACA
-
+	aca := New(NewRuneSet("-|}+=)(&"), false)
 	aca.Add("say", "she", "he", "her", "shr").Build()
 
 	if !aca.HasContainedIn("yasherhs") {
@@ -18,17 +17,13 @@ func TestACA(t *testing.T) {
 		t.Fatal("ACA match failed")
 	}
 
-	options := &ReplaceOptions{
-		Skips:         NewRuneSet("-|}+=)(&"),
-		Replacement:   '*',
-		ReplaceSkip:   false,
-		CaseSensitive: false,
-	}
-	if aca.Replace("yasherhs", options) != "ya****hs" {
+	var replacement = '*'
+	var replaceSkip = false
+	if aca.Replace("yasherhs", replacement, replaceSkip) != "ya****hs" {
 		t.Fatal("ACA replace failed")
 	}
 
-	if aca.Replace("-y|a}s+h=e)r(h&s", options) != "-y|a}*+*=*)*(h&s" {
+	if aca.Replace("-y|a}s+h=e)r(h&s", replacement, replaceSkip) != "-y|a}*+*=*)*(h&s" {
 		t.Fatal("ACA replace with skips failed")
 	}
 
