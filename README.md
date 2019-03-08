@@ -8,24 +8,46 @@ Documentation can be found at [Godoc](https://godoc.org/github.com/cosiner/aca)
 ```Go
 
 func TestACA(t *testing.T) {
-	aca := New(NewSkipsCleaner([]rune("-|}+=)(&")), NewIgnoreCaseCleaner())
-	aca.Add("say", "she", "he", "her", "shr").Build()
+	strs := []string{"say", "she", "he", "her", "shr"}
+	aca := New(
+		strs,
+		GroupCleaners(
+			NewSkipsCleaner([]rune("-|}+=)(&")),
+			NewIgnoreCaseCleaner(),
+		),
+	)
 
-	if !aca.HasContainedIn("yaSherhs") {
-		t.Fatal("ACA check contained in failed")
+	{
+		var contains QueryContainsProcessor
+		aca.Process("yaSherhs", &contains)
+		if !contains.Result() {
+			t.Fatal("ACA check contained in failed")
+		}
 	}
 
-	if !reflect.DeepEqual([]string{"ShE", "hE", "hEr"}, aca.Match("yaShErhs")) {
-		t.Fatal("ACA match failed")
+	{
+		var matched QueryMatchedProcessor
+		aca.Process("yaShErhs", &matched)
+		if !reflect.DeepEqual([]string{"ShE", "hE", "hEr"}, matched.Result()) {
+			t.Fatal("ACA match failed")
+		}
 	}
 
 	var replacement = '*'
-	if aca.Replace("yasherhs", replacement) != "ya****hs" {
-		t.Fatal("ACA replace failed")
+	{
+		var replace = NewReplaceMatchedHandler(replacement)
+		aca.Process("yasherhs", replace)
+		if replace.Result() != "ya****hs" {
+			t.Fatal("ACA replace failed")
+		}
 	}
 
-	if aca.Replace("-y|a}s+h=e)r(h&s", replacement) != "-y|a}*+*=*)*(h&s" {
-		t.Fatal("ACA replace with skipsCleaner failed")
+	{
+		var replace = NewReplaceMatchedHandler(replacement)
+		aca.Process("-y|a}s+h=e)r(h&s", replace)
+		if replace.Result() != "-y|a}*+*=*)*(h&s" {
+			t.Fatal("ACA replace with skipsCleaner failed")
+		}
 	}
 }
 ```

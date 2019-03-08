@@ -17,11 +17,16 @@ type ACA struct {
 	root    *treeNode
 }
 
-func New(cleaners ...Cleaner) *ACA {
-	return &ACA{
-		cleaner: groupCleaners(cleaners),
+func New(strs []string, cleaner Cleaner) *ACA {
+	a := &ACA{
+		cleaner: cleaner,
 		root:    &treeNode{},
 	}
+	for _, str := range strs {
+		a.addStr(str)
+	}
+	a.build()
+	return a
 }
 
 func (a *ACA) addStr(str string) {
@@ -56,14 +61,6 @@ func (a *ACA) addStr(str string) {
 	}
 }
 
-func (a *ACA) Add(strings ...string) *ACA {
-	for _, str := range strings {
-		a.addStr(str)
-	}
-
-	return a
-}
-
 func (a *ACA) iterate(fn func(parent, child *treeNode)) {
 	queue := list.New()
 	queue.PushBack(a.root)
@@ -79,7 +76,7 @@ func (a *ACA) iterate(fn func(parent, child *treeNode)) {
 	}
 }
 
-func (a *ACA) Build() *ACA {
+func (a *ACA) build() {
 	a.root.failNode = a.root
 
 	a.iterate(func(parent, child *treeNode) {
@@ -97,13 +94,6 @@ func (a *ACA) Build() *ACA {
 			child.failNode = a.root
 		}
 	})
-
-	return a
-}
-
-type Processor interface {
-	Init(raw IndexedRunes)
-	Process(a *ACA, runes IndexedRunes, matched string) (continu bool)
 }
 
 func (a *ACA) Process(str string, processor Processor) {
@@ -113,7 +103,7 @@ func (a *ACA) Process(str string, processor Processor) {
 		rs       = a.cleaner.Clean(rawRunes.copy())
 	)
 
-	processor.Init(rawRunes)
+	processor.Init(str, rawRunes)
 	for i, r := range rs {
 		var rooIterated bool
 		for {
@@ -138,81 +128,10 @@ func (a *ACA) Process(str string, processor Processor) {
 			if tmp.str != "" {
 				end := i + 1
 				begin := end - tmp.runeCount
-				if !processor.Process(a, rs[begin:end], tmp.str) {
+				if !processor.Process(rs[begin:end], tmp.str) {
 					return
 				}
 			}
 		}
 	}
-}
-
-type queryMatched struct {
-	raw     IndexedRunes
-	matched []string
-}
-
-func (m *queryMatched) Init(raw IndexedRunes) {
-	m.raw = raw
-}
-
-func (m *queryMatched) Process(a *ACA, runes IndexedRunes, matched string) bool {
-	rs := make([]rune, len(runes))
-	for i, r := range runes {
-		rs[i] = m.raw[r.Index].Rune
-	}
-
-	m.matched = append(m.matched, string(rs))
-	return true
-}
-
-func (a *ACA) Match(str string) []string {
-	var p queryMatched
-	a.Process(str, &p)
-	return p.matched
-}
-
-type queryHasContainedIn struct {
-	has bool
-}
-
-func (p *queryHasContainedIn) Init(raw IndexedRunes) {}
-
-func (p *queryHasContainedIn) Process(*ACA, IndexedRunes, string) bool {
-	p.has = true
-	return false
-}
-
-func (a *ACA) HasContainedIn(str string) bool {
-	var p queryHasContainedIn
-	a.Process(str, &p)
-	return p.has
-}
-
-type replaceMatched struct {
-	raw         IndexedRunes
-	replaced    bool
-	replacement rune
-}
-
-func (p *replaceMatched) Init(raw IndexedRunes) {
-	p.raw = raw
-}
-
-func (p *replaceMatched) Process(a *ACA, runes IndexedRunes, matched string) bool {
-	for _, r := range runes {
-		p.raw[r.Index].Rune = p.replacement
-		p.replaced = true
-	}
-	return true
-}
-
-func (a *ACA) Replace(str string, replacement rune) string {
-	p := replaceMatched{
-		replacement: replacement,
-	}
-	a.Process(str, &p)
-	if !p.replaced {
-		return str
-	}
-	return p.raw.String()
 }
