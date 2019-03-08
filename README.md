@@ -6,33 +6,27 @@ Documentation can be found at [Godoc](https://godoc.org/github.com/cosiner/aca)
 
 # Example
 ```Go
-func TestACA(t *testing.T) {
-	var aca ACA
 
+func TestACA(t *testing.T) {
+	aca := New(NewSkipsCleaner([]rune("-|}+=)(&")), NewIgnoreCaseCleaner())
 	aca.Add("say", "she", "he", "her", "shr").Build()
 
-	if !aca.HasContainedIn("yasherhs") {
+	if !aca.HasContainedIn("yaSherhs") {
 		t.Fatal("ACA check contained in failed")
 	}
 
-	if !reflect.DeepEqual([]string{"she", "he", "her"}, aca.Match("yasherhs")) {
+	if !reflect.DeepEqual([]string{"ShE", "hE", "hEr"}, aca.Match("yaShErhs")) {
 		t.Fatal("ACA match failed")
 	}
 
-	options := &ReplaceOptions{
-		Skips:         NewRuneSet("-|}+=)(&"),
-		Replacement:   '*',
-		ReplaceSkip:   false,
-		CaseSensitive: false,
-	}
-	if aca.Replace("yasherhs", options) != "ya****hs" {
+	var replacement = '*'
+	if aca.Replace("yasherhs", replacement) != "ya****hs" {
 		t.Fatal("ACA replace failed")
 	}
 
-	if aca.Replace("-y|a}s+h=e)r(h&s", options) != "-y|a}*+*=*)*(h&s" {
-		t.Fatal("ACA replace with skips failed")
+	if aca.Replace("-y|a}s+h=e)r(h&s", replacement) != "-y|a}*+*=*)*(h&s" {
+		t.Fatal("ACA replace with skipsCleaner failed")
 	}
-
 }
 ```
 
